@@ -150,12 +150,15 @@ section .data   ;;; First Primitives
         ;; I/O Operations
 
 key:    ; get char via C `getchar()` and write it to the data stack
+        enter   0, 0
         call    getchar
         inc     edi             ; data_stk.push.1
         mov     [edi], al       ; data_stk.push.2
+        leave
         ret
 
 echo:   ; Output top of the stack through `putchar()`
+        enter   0, 0
         xor     eax, eax        ; zero EAX cuz putchar takes an int
         mov     al, [edi]       ; data_stk.pop.1
         dec     edi             ; data_stk.pop.2
@@ -163,6 +166,7 @@ echo:   ; Output top of the stack through `putchar()`
         push    eax             ; push DWORD char on stack (lsb)
         call    putchar
         add     esp, PTR
+        leave
         ret
 
 
