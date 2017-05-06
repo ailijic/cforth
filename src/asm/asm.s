@@ -203,7 +203,7 @@ section .data
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; MAIN
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
+        
 global forth
 global key
 
@@ -236,11 +236,26 @@ section .text
         align PTR
 forth:
         enter   0, 0
+        ; does putchar work
+        push 0x0A
+        push "t"
+        push "a"
+        push "c"
+        call putchar
+        lea esp, [esp+4]
+        call putchar
+        lea esp, [esp+4]
+        call putchar
+        lea esp, [esp+4]
+        call putchar
+        lea esp, [esp+4]
+
         ; learn about registers
         xor eax, eax
         add al, 0xaa
         add ah, 0xbb
         add eax, 0xddcc0000
+
         ; learn about the stack
         push 0xabcdef69
         push 0x12345678
@@ -249,18 +264,23 @@ forth:
         push 0x4c4f5645
         push 0x45564f4c         ; "LOVE" in ascii 
 
-key:    ; get char from stdin and push onto arg_stk
-        _get_char
-.ret
+key:    ; get char via C `getchar()` and write it to the data stack
+        call    getchar
+        inc     edi             ; data_stk.push.1
+        mov     [edi], al       ; data_stk.push.2
+        ret
 
-_get_char:      ; Return one char on the data stack
-        ; check if there are chars in `input`
-        ; IF no chars
-        ; call fgets
-        ; IF chars in 'input'
-        ; push one onto the data stack
-        ; reduce char count
-        ; call next to return
+echo:   ; Output top of the stack through `putchar()`
+        xor     eax, eax        ; zero EAX cuz putchar takes an int
+        mov     al, [edi]       ; data_stk.pop.1
+        dec     edi             ; data_stk.pop.2
+        ; Set up for putchar()
+        push    eax             ; push DWORD char on stack (lsb)
+        call    putchar
+        add     esp, PTR
+        ret
+
+
         
         
 
