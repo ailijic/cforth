@@ -86,9 +86,11 @@ section .bss
 
 ;; Variables
         extern  stdout
+        extern  stdin
         ;extern  errno
 
 ;; IO: output
+        extern  write           ; int write(fd, buff, char_count)
         extern  fprintf         ; int32 fprintf(stream, *format, ...)
         extern  printf          ; int32 printf(*format, ...)
                                         ; RET: num chars printed
@@ -100,6 +102,7 @@ section .bss
         extern  fputc           ; int32 putchar(int char, stream)
 
 ;; IO: input
+        extern  read            ; int read(fd, buff, count)
         extern  fgets           ; ptr fgets(buff, size, stream)
                                         ; RET: buff OR (NULL when done) 
         extern  fgetc           ; int32 fgetc(stream)
@@ -202,19 +205,65 @@ section .data
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 global forth
+global key
+
+;;;     ESP: return stack
+;;;     EBP: Buffer text buffer
+;;;     EDI: data stack \ arg stack \ parameter stack
+;;;     ESI: source code (dictionary)
 
 extern get_page
 
 section .bss
+        align   64
+        line            resb    64
+        line_size       equ     ($ - buff)
+        
+        ;; Input and output buffers
+        align   64
+        input           resb    64
+        input_size      equ     ($ - input)
+        output          resb    64
+        output_size     equ     ($ - output)
+
         align   PTR
         ret_stk:        resb    PTR
         arg_stk:        resb    PTR
         dict:           resb    PTR
+        c_stk       resb    PTR
 
 section .text
         align PTR
 forth:
         enter   0, 0
+        ; learn about registers
+        xor eax, eax
+        add al, 0xaa
+        add ah, 0xbb
+        add eax, 0xddcc0000
+        ; learn about the stack
+        push 0xabcdef69
+        push 0x12345678
+        push 0x89674523
+        push 0x98765432
+        push 0x4c4f5645
+        push 0x45564f4c         ; "LOVE" in ascii 
+
+key:    ; get char from stdin and push onto arg_stk
+        _get_char
+.ret
+
+_get_char:      ; Return one char on the data stack
+        ; check if there are chars in `input`
+        ; IF no chars
+        ; call fgets
+        ; IF chars in 'input'
+        ; push one onto the data stack
+        ; reduce char count
+        ; call next to return
+        
+        
+
 .get_mem_page:
         call    get_page
         mov     [ret_stk], eax
@@ -222,6 +271,75 @@ forth:
         mov     [arg_stk], eax
         call    get_page
         mov     [dict],    eax
+
+        ; Setup arg_stk
+        mov     eax, [arg_stk]
+        add     eax, 4092   ; last address in page is dict[4095]
+                            ; 4092 is the last 4 byte aligned addr
+        mov     [arg_stk], eax ; dict is now set to the bottom of the stack
+        
+        ; Switch stack pointer to forth arg_stack
+        mov     eax, esp         ; Get ready to store C stack PTR
+        mov     [c_stk], eax     ; store C stack PTR
+        mov     eax, [arg_stk]   ; Load arg stack PTR
+        mov     esp, eax         ; new stack PTR is set
+
+        ; set EBX to be the return stack pointer
+        mov ebx, [ret_stk]
+
+global get_stream
+get_stream:     ; Get line from stdin and write to buff
+        ;mov     ebx, line
+        ;mov     eax, stdin    ; load addrs
+        ;push    eax
+        ;push    dword line_size
+        ;push    ebx             ; Push args onto the stack
+        push    dword line_size
+        push    line
+        push    0
+        call    read
+        lea     esp, [esp-3*PTR]
+
+put_stream:     ; Write the stream to buff
+        ;mov     eax, [stdout]
+        ;push    eax
+        ;push    ebx             ; EBX still holds [line]
+        ;call    fputs
+        push    6
+        push    line
+        push    1
+        call    write
+        lea     esp, [esp-3*PTR]
+        ;lea     esp, [esp-2*PTR]
+        jmp     restore_stk
+
+
+
+get_word:  ; Get chars from console, store on stack, then print it out
+        push    NULL
+.loop:  call    getchar
+        push    eax             ; save the char we got
+        test    eax, eax        ; Test so we can check if negative
+        JNS     .loop           ; IF EAX > -1 (!EOF) push char
+.l_end  lea     esp, [esp+PTR]  ; remove EOF from stack
+
+put_word:  ; Put chars to stdout
+.loop:  call    putchar
+        lea     esp, [esp+PTR] ; remove the char from the stack
+        test    eax, 0
+        jnz     .loop
+
+restore_stk:   ; Restore C stack PTR and Store forth stack PTR
+        mov     eax, esp
+        mov     [arg_stk], eax  ; Save arg_stk
+        mov     eax, [c_stk]
+        mov     esp, eax        ; Restore C stack
+
+        ;; DONE
+        jmp     clean_exit
+
+         
+
 .test_mem_exe:
         ; Write opcodes to memory
         mov     eax, [dict]
@@ -234,7 +352,7 @@ forth:
         ; Get ready to jmp and ret from memory
         xor     ebx, ebx        ; zero our counter
         mov     edx, [dict]     ; load addr to jmp to
-        mov     eax, forth.exit ; load ret addr
+        mov     eax, exit       ; load ret addr
         jmp     edx
 .test_mem_rw:
         mov     ebx, [arg_stk]
@@ -242,8 +360,13 @@ forth:
         mov     [ebx], eax
         xor     eax, eax
         mov     eax, [ebx]
-.exit:
+exit:
         mov     eax, ebx
+        leave
+        ret
+
+clean_exit:
+        xor eax, eax
         leave
         ret
         
