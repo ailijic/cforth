@@ -1,6 +1,6 @@
 
 name = cforth
-exe = $(exeDir)/$(name)
+exe = $(exeDir)/$(name).exe
 
 srcDir = src
 asmDir = src/asm
